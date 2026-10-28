@@ -49,3 +49,12 @@ input[type=search]{flex:1;min-width:200px}
 tr.added td{background:#16241a}tr.removed td{opacity:.45;text-decoration:line-through}tr.removed td:last-child{opacity:1;text-decoration:none}
 .newtag{color:var(--green);font-size:11px;border:1px solid var(--green);border-radius:3px;padding:0 3px;margin-left:4px}
 .btn.mini{padding:2px 8px;font-size:12px;font-weight:500}
+
+.searchwrap { position: relative; }
+.searchwrap label { display: flex; flex-direction: column; }
+.results { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; margin: 2px 0 0; padding: 0; list-style: none; max-height: 320px; overflow-y: auto; background: #0c0a08; border: 1px solid #5a4a38; border-radius: 6px; box-shadow: 0 6px 20px rgba(0,0,0,.5); }
+.results li { padding: 6px 10px; cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
+.results li:hover, .results li.sel { background: #2c2319; }
+.results li .cat { margin-left: auto; color: var(--muted); font-size: .85em; }
+.results li.more { cursor: default; opacity: .6; font-style: italic; }
+.results li.more:hover { background: none; }

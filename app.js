@@ -163,7 +163,41 @@
     return out;
   };
   const opts = Object.keys(ITEMS).sort((a, b) => ITEMS[a].n.localeCompare(ITEMS[b].n) || a.localeCompare(b));
-  $('#addList').innerHTML = opts.map(k => `<option value="${esc(ITEMS[k].n + ' (' + k + ')')}"></option>`).join('');
+  const RESULT_LIMIT = 80, fold = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const hay = Object.fromEntries(opts.map(k => [k, fold(ITEMS[k].n + ' ' + k)]));
+  let resIdx = -1, resKeys = [];
+  function hideResults() { $('#addResults').hidden = true; $('#addSearch').setAttribute('aria-expanded', 'false'); resIdx = -1; }
+  function showResults() {
+    const raw = $('#addSearch').value.trim(), ul = $('#addResults');
+    if (/\(([^()]+)\)\s*$/.test(raw) && pickedPrefab()) return hideResults();
+    const words = fold(raw).split(/\s+/).filter(Boolean);
+    const hits = words.length ? opts.filter(k => words.every(w => hay[k].includes(w))) : opts.slice();
+    if (words.length) { const w0 = words[0], rank = k => { const n = fold(ITEMS[k].n), p = k.toLowerCase(); return n === w0 || p === w0 ? 0 : n.startsWith(w0) || p.startsWith(w0) ? 1 : 2; }; hits.sort((a, b) => rank(a) - rank(b)); }
+    resKeys = hits.slice(0, RESULT_LIMIT); resIdx = -1;
+    ul.innerHTML = resKeys.length
+      ? resKeys.map((k, i) => `<li role="option" data-i="${i}"><span>${esc(ITEMS[k].n)}</span> <span class="prefab">${esc(k)}</span> <span class="cat">${esc(ITEMS[k].c)}</span></li>`).join('') + (hits.length > RESULT_LIMIT ? `<li class="more">${hits.length - RESULT_LIMIT} more, keep typing to narrow it down</li>` : '')
+      : '<li class="more">No items match.</li>';
+    ul.hidden = false; $('#addSearch').setAttribute('aria-expanded', 'true');
+  }
+  function choose(i) {
+    const k = resKeys[i]; if (!k) return;
+    $('#addSearch').value = ITEMS[k].n + ' (' + k + ')'; hideResults();
+    $('#addSearch').dispatchEvent(new Event('input'));
+  }
+  function moveSel(d) {
+    const lis = [...$('#addResults').querySelectorAll('li[data-i]')]; if (!lis.length) return;
+    resIdx = (resIdx + d + lis.length) % lis.length;
+    lis.forEach((li, i) => li.classList.toggle('sel', i === resIdx)); lis[resIdx].scrollIntoView({ block: 'nearest' });
+  }
+  $('#addResults').addEventListener('mousedown', e => { const li = e.target.closest('li[data-i]'); e.preventDefault(); if (li) choose(+li.dataset.i); });
+  $('#addSearch').addEventListener('focus', showResults);
+  $('#addSearch').addEventListener('blur', () => setTimeout(hideResults, 150));
+  $('#addSearch').addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); if ($('#addResults').hidden) showResults(); moveSel(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moveSel(-1); }
+    else if (e.key === 'Enter') { if (!$('#addResults').hidden) { e.preventDefault(); choose(resIdx >= 0 ? resIdx : 0); } }
+    else if (e.key === 'Escape') hideResults();
+  });
   function pickedPrefab() {
     const v = $('#addSearch').value.trim(); if (!v) return null;
     const m = /\(([^()]+)\)\s*$/.exec(v); if (m && ITEMS[m[1]]) return m[1];
@@ -186,7 +220,8 @@
     return `<b>${esc(i.n)}</b> <span class="prefab">${esc(k)}</span> · ${esc(i.c)} · ` + (ms ? `stacks to ${ms}` : 'max stack unknown (capped at 999)') + ` · normal max level ${i.mq}` + (i.ds ? ' · durability from older data' : '');
   }
   function resetAddForm() { $('#addSearch').value = ''; $('#addLevel').value = 1; $('#addStack').value = 1; $('#addCrafted').checked = false; }
-  $('#addSearch').addEventListener('input', () => {
+  $('#addSearch').addEventListener('input', e => {
+    if (e.isTrusted) showResults();
     const k = pickedPrefab();
     if (k) { const i = ITEMS[k]; $('#addLevel').max = maxLevel(i); $('#addLevel').value = Math.min(+$('#addLevel').value || 1, maxLevel(i)); $('#addStack').max = maxStack(i) || 999; $('#addStack').value = Math.min(+$('#addStack').value || 1, maxStack(i) || 999); $('#addCrafted').checked = CRAFTED.has(i.c); }
     st && fillSlots();
