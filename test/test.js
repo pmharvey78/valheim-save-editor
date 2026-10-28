@@ -43,6 +43,51 @@ const byHash = {}; for (const k in ITEMS) byHash[F.stableHash(k)] = k;
   ok(eq(out, expect), `level-20 edit byte-identical to sirbollocksalot.fch (sha256 ${sha256(out)})`);
   ok(sha256(out).startsWith('d81c347d'), 'sha256 starts d81c347d');
 
+  // ---- adding / removing items ----
+  {
+    const raw = fs.readFileSync(here('live_before_l20.fch')), p = F.parse(raw);
+    ok(p.invRows === 5 && p.invCols === 8, `inventory grid read as ${p.invCols}x${p.invRows} (uniques has "invrows 5")`);
+    ok(p.items.every(i => byHash[i.prefabHash]), 'every inventory item in the save resolves to a bundled prefab name');
+    // the encoder reproduces every game-written record exactly
+    let same = 0;
+    for (const it of p.items) {
+      if (Object.keys(it.custom).length || it.extra) continue;
+      const enc = F.encodeItem({ prefab: byHash[it.prefabHash], x: it.x, y: it.y, worldLevel: it.worldLevel, quality: it.quality, stack: it.stack, durability: it.durability, variant: it.variant, crafterId: it.crafterId || 0n, crafter: it.crafter, equipped: it.equipped });
+      if (eq(enc, p.data.subarray(it.off, it.end))) same++;
+    }
+    ok(same === p.items.length, `encoder reproduces all ${same}/${p.items.length} game-written item records byte for byte`);
+    // remove the last item, then add it back from its parsed fields -> original file
+    const last = p.items[p.items.length - 1], k = byHash[last.prefabHash];
+    const rem = await F.build(p, new Map(), { remove: [last.index] }), pr = F.parse(rem);
+    ok(await F.hashOk(pr) && pr.seedsOk && pr.items.length === p.items.length - 1, `removing ${k}: valid hash, ${pr.items.length} items`);
+    const back = await F.build(pr, new Map(), { add: [{ prefab: k, x: last.x, y: last.y, quality: last.quality, stack: last.stack, durability: last.durability, crafterId: last.crafterId, crafter: last.crafter, equipped: last.equipped }] });
+    ok(eq(back, raw), 'remove + re-add of the same item gives the original file byte-identical');
+    // add Nidhogg L5 + 50 Wood
+    const slots = F.freeSlots(p);
+    const nid = { prefab: 'SwordNiedhoggLightning', ...slots[0], quality: 5, durability: ITEMS.SwordNiedhoggLightning.dur[0] + 4 * ITEMS.SwordNiedhoggLightning.dur[1], crafterId: p.playerId, crafter: p.name };
+    const wood = { prefab: 'Wood', ...slots[1], stack: 50 };
+    const added = await F.build(p, new Map(), { add: [nid, wood] }), pa = F.parse(added);
+    ok(await F.hashOk(pa) && pa.seedsOk && pa.items.length === 38, `added Nidhögg L5 at (${slots[0].x},${slots[0].y}) + 50 Wood at (${slots[1].x},${slots[1].y}): valid hash, 38 items`);
+    const [a1, a2] = pa.items.slice(36);
+    ok(byHash[a1.prefabHash] === 'SwordNiedhoggLightning' && a1.quality === 5 && a1.durability === 500 && a1.crafter === p.name && a1.crafterId === p.playerId && !a1.cheated && !a1.equipped, 'added Nidhögg parses back: level 5, durability 500, crafted by the player, not cheated');
+    ok(byHash[a2.prefabHash] === 'Wood' && a2.stack === 50 && a2.quality === 1 && a2.durability === 100 && a2.crafter === '' && !a2.cheated, 'added Wood parses back: stack 50, no crafter, not cheated');
+    ok(eq(pa.data.subarray(pa.itemsEnd), p.data.subarray(p.itemsEnd)) && eq(pa.data.subarray(pa.itemCountPos + 2, pa.items[36].off), p.data.subarray(p.itemCountPos + 2, p.itemsEnd)) && eq(pa.data.subarray(0, p.itemCountPos), p.data.subarray(0, p.itemCountPos).map((x, i) => i >= p.blobLenPos && i < p.blobLenPos + 4 ? pa.data[i] : x)), 'all bytes before and after the inventory are unchanged (except the block length)');
+    ok(F.freeSlots(pa).every(s => !pa.items.some(i => i.x === s.x && i.y === s.y)) && new Set(pa.items.map(i => i.x + ',' + i.y)).size === 38 - 0 - (p.items.length - new Set(p.items.map(i => i.x + ',' + i.y)).size), 'no new slot overlaps');
+    const both = await F.build(pa, new Map(), { remove: [36, 37] });
+    ok(eq(both, raw), 'removing the two added items gives the original file byte-identical');
+    const py = `import sys; sys.path.insert(0,'/workspace/valheim/ref'); import upgrade_oracle as u, json
+s=u.load(sys.stdin.buffer.read()); print(json.dumps([len(s['items'])]+s['items'][-2:]))`;
+    if (fs.existsSync('/workspace/valheim/ref/upgrade_oracle.py')) {
+      const r = JSON.parse(execFileSync('python3', ['-c', py], { input: Buffer.from(added) }));
+      ok(r[0] === 38 && r[1].prefab === F.stableHash('SwordNiedhoggLightning') && r[1].quality === 5 && r[2].stack === 50, "Melichor's parser reads the added file: 38 items, Nidhögg q5, Wood x50");
+    }
+    fs.writeFileSync('/tmp/fch_added.fch', added);
+    // full grid
+    const fill = F.freeSlots(p).map(s => ({ prefab: 'Stone', ...s }));
+    const full = F.parse(await F.build(p, new Map(), { add: fill }));
+    ok(full.items.length === 40 && F.freeSlots(full).length === 0, `filling all ${fill.length} free slots leaves 40 items and no free slot`);
+  }
+
   // stable hash + forge replay vs Melichor's Python oracle (if available)
   const oracle = '/workspace/valheim/ref/upgrade_oracle.py';
   if (fs.existsSync(oracle)) {

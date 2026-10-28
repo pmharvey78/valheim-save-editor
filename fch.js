@@ -69,7 +69,7 @@
     if (out.playerVersion < 34) throw new Error('Player data version ' + out.playerVersion + ' not supported (need 34+)');
     b.skip(16); out.guardianPower = b.str(); b.skip(4);
     out.inventoryVersion = b.i32();
-    const items = [], cnt = b.u16();
+    const items = []; out.itemCountPos = b.p; const cnt = b.u16();
     for (let i = 0; i < cnt; i++) {
       const it = { index: i, off: b.p };
       it.durability = b.i32() / 100; it.x = b.u8(); it.y = b.u8(); it.worldLevel = b.u8();
@@ -85,11 +85,15 @@
       it.extra = b.u8(); it.cheated = !!(it.extra & 1);
       it.end = b.p; items.push(it);
     }
-    out.items = items;
+    out.items = items; out.itemsEnd = b.p;
     // Remainder of the player block, parsed only to locate the Forge of Potential seeds (the last field).
     let c = b.count(); for (let i = 0; i < c; i++) b.str();                // known recipes
     c = b.count(); for (let i = 0; i < c; i++) { b.str(); b.skip(4); }   // known stations
-    for (let k = 0; k < 4; k++) { c = b.count(); for (let i = 0; i < c; i++) b.str(); } // materials, tutorials, uniques, trophies
+    const lists = [];
+    for (let k = 0; k < 4; k++) { c = b.count(); const L = []; for (let i = 0; i < c; i++) L.push(b.str()); lists.push(L); } // materials, tutorials, uniques, trophies
+    out.uniques = lists[2];
+    const rowKey = out.uniques.map(u => /^invrows (\d+)$/.exec(u)).find(Boolean); // set by Wider/Deeper Pockets or `inventorysize`
+    out.invRows = Math.max(rowKey ? +rowKey[1] : 4, ...items.map(i => i.y + 1), 1); out.invCols = 8;
     c = b.count(); for (let i = 0; i < c; i++) b.str();                  // biomes
     c = b.count(); for (let i = 0; i < c; i++) { b.str(); b.str(); }     // texts
     b.str(); b.str(); b.skip(28);                                         // beard, hair, colours, model
@@ -110,11 +114,43 @@
   }
   async function hashOk(p) { const h = await sha512(p.data); return p.hashLen === 64 && h.every((x, i) => x === p.hash[i]); }
 
-  /* edits: Map(itemIndex -> {quality?, durability?}). Returns a new complete .fch as Uint8Array. */
-  async function build(p, edits) {
-    const d = p.data, patches = [];
+  /* Encode one new inventory record in the compact format the game writes (inventory version 110).
+     spec: {prefab, x, y, quality=1, stack=1, durability=100, variant=0, worldLevel=0, crafterId=0n, crafter='', equipped=false} */
+  const te = new TextEncoder();
+  function encStr(s) {
+    const b = te.encode(s), len = []; let n = b.length;
+    do { let x = n & 0x7f; n >>>= 7; if (n) x |= 0x80; len.push(x); } while (n);
+    const o = new Uint8Array(len.length + b.length); o.set(len); o.set(b, len.length); return o;
+  }
+  function encodeItem(sp) {
+    const q = sp.quality == null ? 1 : sp.quality | 0, st = sp.stack == null ? 1 : sp.stack | 0, v = sp.variant | 0;
+    const cid = BigInt(sp.crafterId || 0), cname = sp.crafter || '';
+    if (!sp.prefab) throw new Error('prefab name required');
+    if (q < 1 || q > 65535) throw new Error('Level must be 1..65535');
+    if (st < 1 || st > 65535) throw new Error('Stack must be 1..65535');
+    if (!(sp.x >= 0 && sp.x < 256 && sp.y >= 0 && sp.y < 256)) throw new Error('Bad slot');
+    let fl = 1 | 64;                                   // picked up, prefab hash present (as the game writes)
+    if (sp.equipped) fl |= 2; if (q !== 1) fl |= 4; if (st !== 1) fl |= 8; if (v) fl |= 16; if (cid !== 0n || cname) fl |= 32;
+    const parts = [], push = (n, f) => { const a = new Uint8Array(n); f(new DataView(a.buffer)); parts.push(a); };
+    push(8, d => { d.setInt32(0, Math.round((sp.durability == null ? 100 : sp.durability) * 100), true); d.setUint8(4, sp.x); d.setUint8(5, sp.y); d.setUint8(6, (sp.worldLevel | 0) & 255); d.setUint8(7, fl); });
+    if (fl & 4) push(2, d => d.setUint16(0, q, true));
+    if (fl & 8) push(2, d => d.setUint16(0, st, true));
+    if (fl & 16) push(4, d => d.setInt32(0, v, true));
+    if (fl & 32) { push(8, d => d.setBigInt64(0, cid, true)); parts.push(encStr(cname)); }
+    push(4, d => d.setInt32(0, stableHash(sp.prefab), true));
+    parts.push(Uint8Array.of(0));                      // extra byte: not cheated
+    const out = new Uint8Array(parts.reduce((a, b) => a + b.length, 0)); let o = 0; for (const x of parts) { out.set(x, o); o += x.length; }
+    return out;
+  }
+
+  /* edits: Map(itemIndex -> {quality?, durability?}); opts.remove: iterable of item indexes; opts.add: [item spec].
+     Returns a new complete .fch as Uint8Array. Everything not edited is copied byte for byte. */
+  async function build(p, edits, opts) {
+    const d = p.data, patches = [], remove = new Set((opts && opts.remove) || []), add = (opts && opts.add) || [];
+    for (const idx of remove) { const it = p.items[idx]; if (!it) throw new Error('No item ' + idx); patches.push({ at: it.off, del: it.end - it.off, ins: new Uint8Array(0) }); }
     for (const [idx, e] of (edits || new Map())) {
       const it = p.items[idx]; if (!it) throw new Error('No item ' + idx);
+      if (remove.has(idx)) continue;
       if (e.durability != null) {
         const v = new Uint8Array(4); new DataView(v.buffer).setInt32(0, Math.round(e.durability * 100), true);
         patches.push({ at: it.off, del: 4, ins: v });
@@ -130,9 +166,19 @@
         else patches.push({ at: it.off + 8, del: 0, ins: qb });
       }
     }
-    patches.sort((a, b) => a.at - b.at);
+    const count = p.items.length - remove.size + add.length;
+    if (count > 65535) throw new Error('Too many items');
+    if (remove.size || add.length) {
+      const cb = new Uint8Array(2); new DataView(cb.buffer).setUint16(0, count, true);
+      patches.push({ at: p.itemCountPos, del: 2, ins: cb });
+      for (const sp of add) patches.push({ at: p.itemsEnd, del: 0, ins: encodeItem(sp), order: 1 });
+    }
+    patches.sort((a, b) => a.at - b.at || (a.order || 0) - (b.order || 0));
     const parts = []; let pos = 0, delta = 0;
-    for (const x of patches) { parts.push(d.subarray(pos, x.at), x.ins); pos = x.at + x.del; delta += x.ins.length - x.del; }
+    for (const x of patches) {
+      if (x.at < pos) throw new Error('Overlapping edits');
+      parts.push(d.subarray(pos, x.at), x.ins); pos = x.at + x.del; delta += x.ins.length - x.del;
+    }
     parts.push(d.subarray(pos));
     const nd = new Uint8Array(d.length + delta); let o = 0; for (const s of parts) { nd.set(s, o); o += s.length; }
     const dv = new DataView(nd.buffer);
@@ -140,6 +186,13 @@
     const h = await sha512(nd);
     const out = new Uint8Array(4 + nd.length + 4 + 64), ov = new DataView(out.buffer);
     ov.setInt32(0, nd.length, true); out.set(nd, 4); ov.setInt32(4 + nd.length, 64, true); out.set(h, 8 + nd.length);
+    return out;
+  }
+
+  /* First free slot scanning row by row (row 0 is the hotbar), or null when the grid is full. */
+  function freeSlots(p, taken) {
+    const used = new Set(p.items.map(i => i.x + ',' + i.y).concat(taken || [])), out = [];
+    for (let y = 0; y < p.invRows; y++) for (let x = 0; x < p.invCols; x++) if (!used.has(x + ',' + y)) out.push({ x, y });
     return out;
   }
 
@@ -170,6 +223,6 @@
     return { from: quality, steps, upgrades: steps.filter(s => s.outcome === 'success').length, broke: last.outcome === 'broke', breaksAt: last.outcome === 'broke' ? last.to : null };
   }
 
-  const api = { Reader, parse, build, sha512, hashOk, stableHash, roll, predict };
+  const api = { Reader, parse, build, encodeItem, freeSlots, sha512, hashOk, stableHash, roll, predict };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.FCH = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

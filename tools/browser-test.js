@@ -25,6 +25,35 @@ const app = path.resolve(__dirname, '..'), dl = fs.mkdtempSync('/tmp/fchdl-');
   const got = fs.readFileSync(path.join(dl, f)), exp = fs.readFileSync(path.join(FIX, 'sirbollocksalot.fch'));
   const sha = crypto.createHash('sha256').update(got).digest('hex');
   console.log('summary:', summary, '| downloaded as:', f, '| sha256', sha, '| identical:', Buffer.compare(got, exp) === 0, '| page errors:', errs.length ? errs : 'none');
+  let fail = Buffer.compare(got, exp) !== 0 || f !== 'sirbollocksalot.fch' || errs.length;
+
+  // Scenario 2: add Nidhogg L5 + 50 Wood through the Add item panel, remove the Carapace arrows (confirm dialog), download.
+  for (const x of fs.readdirSync(dl)) fs.unlinkSync(path.join(dl, x));
+  await pg.reload(); pg.on('dialog', d => d.accept());
+  await (await pg.$('#file')).uploadFile(src);
+  await pg.waitForSelector('#editor:not([hidden]) #inv tbody tr');
+  const add = async (text, level, amount) => {
+    await pg.$eval('#addSearch', (e, t) => { e.value = t; e.dispatchEvent(new Event('input')); }, text);
+    await pg.$eval('#addLevel', (e, v) => { e.value = v; }, level); await pg.$eval('#addStack', (e, v) => { e.value = v; }, amount);
+    await pg.click('#addBtn');
+  };
+  await add('Nidhögg the Thunderer (SwordNiedhoggLightning)', 5, 1);
+  await add('Wood', 1, 50);
+  await pg.click('#showAll');
+  await pg.evaluate(() => { for (const tr of document.querySelectorAll('#inv tbody tr')) if (tr.querySelector('.prefab').textContent === 'ArrowCarapace') return tr.querySelector('button').click(); throw new Error('no arrows row'); });
+  const summary2 = await pg.$eval('#summary', e => e.textContent);
+  await pg.screenshot({ path: path.join(app, 'screenshot-add.png'), fullPage: true });
+  await pg.click('#download');
+  let f2; for (let t = 0; t < 50 && !(f2 = fs.readdirSync(dl).find(x => !x.endsWith('.crdownload'))); t++) await new Promise(r => setTimeout(r, 100));
+  const F = require(path.join(app, 'fch.js')), ITEMS = require(path.join(app, 'items-data.js'));
+  const p = F.parse(fs.readFileSync(src)), slots = F.freeSlots(p), arrows = p.items.find(i => i.prefabHash === F.stableHash('ArrowCarapace'));
+  const nd = ITEMS.SwordNiedhoggLightning.dur, own = p.items.find(i => i.crafter === p.name && i.crafterId);
+  const exp2 = await F.build(p, new Map(), { remove: [arrows.index], add: [
+    { prefab: 'SwordNiedhoggLightning', ...slots[0], quality: 5, durability: nd[0] + 4 * nd[1], crafter: p.name, crafterId: own.crafterId },
+    { prefab: 'Wood', ...slots[1], stack: 50 }] });
+  const got2 = fs.readFileSync(path.join(dl, f2)), same2 = Buffer.compare(got2, Buffer.from(exp2)) === 0;
+  console.log('add/remove summary:', summary2, '| downloaded as:', f2, '| matches node build:', same2, '| items:', F.parse(got2).items.length, '| page errors:', errs.length ? errs : 'none');
+  fail = fail || !same2 || errs.length;
   await b.close();
-  if (Buffer.compare(got, exp) !== 0 || f !== 'sirbollocksalot.fch' || errs.length) process.exit(1);
+  if (fail) process.exit(1);
 })().catch(e => { console.error(e); process.exit(1); });

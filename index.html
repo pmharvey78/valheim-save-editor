@@ -10,7 +10,7 @@
 <body>
 <header>
   <h1>ᚠ Valheim Item Level Editor</h1>
-  <p class="sub">Raise the level of weapons, armour and shields in a Valheim character file. Fan-made and unofficial: not affiliated with or endorsed by Iron Gate or Coffee Stain. Runs entirely in your browser — your file is never uploaded anywhere.</p>
+  <p class="sub">Raise the level of weapons, armour and shields in a Valheim character file, or add and remove inventory items. Fan-made and unofficial: not affiliated with or endorsed by Iron Gate or Coffee Stain. Runs entirely in your browser — your file is never uploaded anywhere.</p>
 </header>
 
 <main>
@@ -21,6 +21,7 @@
     <li><b>Fully quit Valheim</b> (not just to the main menu) before replacing the file, or the game will overwrite your edit.</li>
     <li>Intended for <b>single-player / your own worlds, at your own risk.</b> Servers running anti-cheat mods may delete items they think are too high level.</li>
     <li>Items whose <b>total damage goes over 10,000</b> get flagged as cheated by the game. The editor warns you when that would happen.</li>
+    <li><b>Adding items is new and not yet verified in game.</b> Added items are written in the same format the game uses and checked by two independent parsers, but nobody has loaded one in Valheim yet — keep your backup. Servers running anti-cheat mods may remove added items.</li>
     <li>Levels are capped at <b>100</b> here. Anything far above the normal maximum is untested; very high levels are not recommended.</li>
   </ul>
   <details>
@@ -59,11 +60,27 @@
   </div>
   <div id="bulkWarn" class="note" hidden></div>
 
+  <div class="panel addpanel">
+    <h2>Add an item</h2>
+    <div class="addrow">
+      <label class="grow">Item
+        <input type="search" id="addSearch" list="addList" placeholder="Search by name, e.g. Wood, Nidhögg, SwordIron" autocomplete="off" spellcheck="false"></label>
+      <datalist id="addList"></datalist>
+      <label>Level <input type="number" id="addLevel" min="1" max="100" value="1"></label>
+      <label>Amount <input type="number" id="addStack" min="1" value="1"></label>
+      <label>Slot <select id="addSlot"></select></label>
+      <label class="chk"><input type="checkbox" id="addCrafted"> crafted by <input type="text" id="addCrafter" maxlength="40" size="14"></label>
+      <button id="addBtn" class="btn">Add to inventory</button>
+    </div>
+    <div id="addInfo" class="note small"></div>
+    <p class="muted small">New items go into the first free slot unless you pick one. Durability is set to full for the level. Unverified in game — see the warning at the top.</p>
+  </div>
+
   <div class="tablewrap">
   <table id="inv">
     <thead><tr>
       <th>Item</th><th>Equipped</th><th>Crafted by</th><th class="num">Level</th><th class="num">New level</th>
-      <th class="num">Durability</th><th>Damage / armour / block</th><th class="forgecol">Forge of Potential</th><th>Notes</th>
+      <th class="num">Durability</th><th>Damage / armour / block</th><th class="forgecol">Forge of Potential</th><th>Notes</th><th></th>
     </tr></thead>
     <tbody></tbody>
   </table>
@@ -84,7 +101,7 @@
   <ul class="small">
     <li>File layout and the Forge of Potential seed behaviour were worked out by <b>Melichor</b> in <a href="https://github.com/Melichor/ValheimSaveParser" rel="noopener">ValheimSaveParser</a> (upgrade_oracle.py) — the logic is described there and re-implemented independently here; no code is copied.</li>
     <li>Item record format cross-checked against <b>Brian Hatfield</b>'s <a href="https://github.com/lanchelms/fch-decoder" rel="noopener">fch-decoder</a> (MIT licence).</li>
-    <li>Item names and stats: <a href="https://valheimdb.com" rel="noopener">valheimdb.com</a> (Valheim 1.0.20).</li>
+    <li>Item names and stats: <a href="https://valheimdb.com" rel="noopener">valheimdb.com</a> (Valheim 1.0.20). Max stack sizes (and durability for a few cosmetic items) come from fch-decoder's item catalogue (MIT), which predates 1.0.20.</li>
     <li>Valheim is a trademark of Iron Gate AB. This is an unofficial fan tool.</li>
   </ul>
 </section>
