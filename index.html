@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Valheim Character Item Level Editor</title>
+<meta name="description" content="Edit item levels in a Valheim character file (.fch) entirely in your browser. Fan-made, unofficial.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>ᚠ Valheim Item Level Editor</h1>
+  <p class="sub">Raise the level of weapons, armour and shields in a Valheim character file. Fan-made and unofficial: not affiliated with or endorsed by Iron Gate or Coffee Stain. Runs entirely in your browser — your file is never uploaded anywhere.</p>
+</header>
+
+<main>
+<section class="panel warn">
+  <h2>Before you start</h2>
+  <ul>
+    <li><b>Back up your character file first.</b> Copy it somewhere safe. If anything goes wrong, put the copy back.</li>
+    <li><b>Fully quit Valheim</b> (not just to the main menu) before replacing the file, or the game will overwrite your edit.</li>
+    <li>Intended for <b>single-player / your own worlds, at your own risk.</b> Servers running anti-cheat mods may delete items they think are too high level.</li>
+    <li>Items whose <b>total damage goes over 10,000</b> get flagged as cheated by the game. The editor warns you when that would happen.</li>
+    <li>Levels are capped at <b>100</b> here. Anything far above the normal maximum is untested; very high levels are not recommended.</li>
+  </ul>
+  <details>
+    <summary>Where is my character file?</summary>
+    <ul>
+      <li><b>Steam Cloud saves</b> (the default): <code>C:\Program Files (x86)\Steam\userdata\&lt;your id&gt;\892970\remote\characters\</code></li>
+      <li><b>Local saves</b>: <code>%userprofile%\AppData\LocalLow\IronGate\Valheim\characters_local\</code></li>
+      <li>The file is named after your character in lowercase, e.g. <code>ragnar.fch</code>. Ignore the <code>.fch.old</code> backups.</li>
+      <li>After editing, replace the original file with the downloaded one (same name). If Steam later reports a <b>cloud sync conflict</b>, choose to keep the <b>local</b> files.</li>
+    </ul>
+  </details>
+</section>
+
+<section id="drop" class="panel drop" tabindex="0">
+  <p><b>Drop your <code>.fch</code> file here</b> or <label class="btn"><input type="file" id="file" accept=".fch,.old,application/octet-stream" hidden>choose a file</label></p>
+  <p class="muted small">The file is read locally with JavaScript. Nothing leaves your computer.</p>
+</section>
+
+<div id="error" class="panel error" hidden></div>
+
+<section id="editor" hidden>
+  <div class="panel charbar">
+    <div><span class="muted">Character</span> <b id="charName"></b></div>
+    <div class="muted small" id="fileInfo"></div>
+  </div>
+
+  <div class="panel tools">
+    <label>Set all weapons, armour and shields to level
+      <input type="number" id="bulkLevel" min="1" max="100" value="10"></label>
+    <button id="bulkApply" class="btn">Apply</button>
+    <label class="chk"><input type="checkbox" id="onlyEquipped"> equipped items only</label>
+    <button id="repairAll" class="btn ghost">Repair all to full durability</button>
+    <button id="resetAll" class="btn ghost">Undo all changes</button>
+    <label class="chk"><input type="checkbox" id="showForge"> show Forge of Potential prediction (experimental)</label>
+    <label class="chk"><input type="checkbox" id="showAll"> show all items (food, materials…)</label>
+  </div>
+  <div id="bulkWarn" class="note" hidden></div>
+
+  <div class="tablewrap">
+  <table id="inv">
+    <thead><tr>
+      <th>Item</th><th>Equipped</th><th>Crafted by</th><th class="num">Level</th><th class="num">New level</th>
+      <th class="num">Durability</th><th>Damage / armour / block</th><th class="forgecol">Forge of Potential</th><th>Notes</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+  </div>
+
+  <div class="panel actions">
+    <div id="summary" class="muted"></div>
+    <div>
+      <button id="dlBackup" class="btn ghost">Download unedited backup</button>
+      <button id="download" class="btn big">Download edited file</button>
+    </div>
+  </div>
+  <p class="muted small">Stats come from vanilla Valheim 1.0.20 data. Values beyond level 9 follow the game's per-level formula but are <i>estimated</i> (not checked in game). Modded items show their raw name and keep their durability.</p>
+</section>
+
+<section class="panel credits">
+  <h2>Credits</h2>
+  <ul class="small">
+    <li>File layout and the Forge of Potential seed behaviour were worked out by <b>Melichor</b> in <a href="https://github.com/Melichor/ValheimSaveParser" rel="noopener">ValheimSaveParser</a> (upgrade_oracle.py) — the logic is described there and re-implemented independently here; no code is copied.</li>
+    <li>Item record format cross-checked against <b>Brian Hatfield</b>'s <a href="https://github.com/lanchelms/fch-decoder" rel="noopener">fch-decoder</a> (MIT licence).</li>
+    <li>Item names and stats: <a href="https://valheimdb.com" rel="noopener">valheimdb.com</a> (Valheim 1.0.20).</li>
+    <li>Valheim is a trademark of Iron Gate AB. This is an unofficial fan tool.</li>
+  </ul>
+</section>
+</main>
+<script src="items-data.js"></script>
+<script src="fch.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
